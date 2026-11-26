@@ -1,0 +1,1613 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pencatat Hutang Supplier - Admin Pembelian</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Plus Jakarta Sans & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased min-h-screen flex flex-col">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Custom Confirmation Modal (Menggantikan confirm() bawaan browser) -->
+    <div id="confirm-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 transition-opacity">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 transform transition-all border border-slate-100">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="p-3 rounded-xl bg-rose-100 text-rose-600">
+                    <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h3 id="modal-title" class="text-lg font-bold text-slate-900">Konfirmasi Hapus</h3>
+                    <p id="modal-subtitle" class="text-sm text-slate-500">Tindakan ini tidak dapat dibatalkan.</p>
+                </div>
+            </div>
+            <p id="modal-message" class="text-slate-600 text-sm mb-6 leading-relaxed">
+                Apakah Anda yakin ingin menghapus data ini?
+            </p>
+            <div class="flex justify-end gap-3">
+                <button type="button" id="modal-cancel-btn" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer">
+                    Batal
+                </button>
+                <button type="button" id="modal-confirm-btn" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 shadow-sm transition-colors cursor-pointer">
+                    Ya, Hapus
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Input Pembayaran (Cicilan / Pelunasan) -->
+    <div id="payment-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full overflow-hidden border border-slate-100 my-auto">
+            <!-- Header Modal Bayar -->
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <div class="p-2 bg-blue-600 rounded-xl">
+                        <i data-lucide="credit-card" class="w-5 h-5 text-white"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold leading-tight">Catat Pembayaran Hutang</h3>
+                        <p id="pay-modal-supplier" class="text-xs text-slate-300 mt-0.5">Nama Supplier</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closePaymentModal()" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <form id="payment-form" class="p-6 space-y-5">
+                <input type="hidden" id="pay-debt-id">
+
+                <!-- Ringkasan Tagihan yang Akan Dibayar -->
+                <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2.5">
+                    <div class="flex items-center justify-between text-xs text-slate-500">
+                        <span>Jatuh Tempo: <strong id="pay-modal-duedate" class="text-slate-700">-</strong></span>
+                        <span id="pay-modal-badge" class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800">Status</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200/70">
+                        <div>
+                            <p class="text-[11px] text-slate-500">Total Tagihan</p>
+                            <p id="pay-modal-total" class="text-xs sm:text-sm font-semibold text-slate-800 mt-0.5">Rp 0</p>
+                        </div>
+                        <div>
+                            <p class="text-[11px] text-slate-500">Sudah Dibayar</p>
+                            <p id="pay-modal-paid" class="text-xs sm:text-sm font-semibold text-emerald-600 mt-0.5">Rp 0</p>
+                        </div>
+                        <div class="bg-blue-50/80 -m-1 p-1.5 rounded-lg border border-blue-100">
+                            <p class="text-[11px] font-medium text-blue-700">Sisa Hutang</p>
+                            <p id="pay-modal-remaining" class="text-xs sm:text-sm font-extrabold text-blue-800 mt-0.5">Rp 0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input Nominal Pembayaran -->
+                <div>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label for="pay-amount-input" class="block text-xs font-bold text-slate-700 uppercase tracking-wide">
+                            Nominal Pembayaran <span class="text-rose-500">*</span>
+                        </label>
+                        <span id="pay-status-preview" class="text-xs font-semibold text-blue-600"></span>
+                    </div>
+                    <div class="relative">
+                        <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">Rp</span>
+                        <input type="text" inputmode="numeric" id="pay-amount-input" required placeholder="0"
+                            class="w-full pl-11 pr-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-base font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-500/10 transition-all">
+                    </div>
+
+                    <!-- Tombol Cepat Nominal -->
+                    <div class="flex flex-wrap items-center gap-2 mt-2.5">
+                        <button type="button" onclick="setQuickPayAmount('full')"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer">
+                            <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
+                            <span>Bayar Penuh / Lunas (<span id="quick-full-label">Rp 0</span>)</span>
+                        </button>
+                        <button type="button" onclick="setQuickPayAmount('half')"
+                            class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer">
+                            <span>50%</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tanggal Bayar & Catatan Metode Pembayaran -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="pay-date-input" class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                            Tanggal Bayar <span class="text-rose-500">*</span>
+                        </label>
+                        <input type="date" id="pay-date-input" required
+                            class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer">
+                    </div>
+                    <div>
+                        <label for="pay-note-input" class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                            Catatan / Metode (Opsional)
+                        </label>
+                        <input type="text" id="pay-note-input" placeholder="Contoh: Transfer BCA, Giro, Cash"
+                            class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    </div>
+                </div>
+
+                <!-- Tombol Aksi Modal -->
+                <div class="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
+                    <button type="button" onclick="closePaymentModal()"
+                        class="px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer">
+                        Batal
+                    </button>
+                    <button type="submit"
+                        class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-all cursor-pointer">
+                        <i data-lucide="save" class="w-4 h-4"></i>
+                        <span>Simpan Pembayaran</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Riwayat Pembayaran -->
+    <div id="history-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl shadow-xl max-w-xl w-full overflow-hidden border border-slate-100 my-auto">
+            <!-- Header Modal Riwayat -->
+            <div class="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <div class="p-2 bg-indigo-100 text-indigo-600 rounded-xl">
+                        <i data-lucide="history" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900">Riwayat Pembayaran</h3>
+                        <p id="hist-modal-supplier" class="text-xs text-slate-500 mt-0.5">Nama Supplier</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeHistoryModal()" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition-colors cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4">
+                <!-- Ringkasan Singkat -->
+                <div class="grid grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/70 text-center">
+                    <div>
+                        <p class="text-[11px] text-slate-500">Total Tagihan</p>
+                        <p id="hist-modal-total" class="text-sm font-bold text-slate-800 mt-0.5">Rp 0</p>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-slate-500">Total Dibayar</p>
+                        <p id="hist-modal-paid" class="text-sm font-bold text-emerald-600 mt-0.5">Rp 0</p>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-slate-500">Sisa Hutang</p>
+                        <p id="hist-modal-remaining" class="text-sm font-bold text-rose-600 mt-0.5">Rp 0</p>
+                    </div>
+                </div>
+
+                <!-- Daftar Transaksi Pembayaran -->
+                <div class="max-h-72 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100" id="history-list-container">
+                    <!-- Item riwayat dirender melalui JS -->
+                </div>
+
+                <div class="flex items-center justify-between pt-2">
+                    <button type="button" id="hist-add-pay-btn" onclick=""
+                        class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer">
+                        <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                        <span>Tambah Pembayaran Lagi</span>
+                    </button>
+                    <button type="button" onclick="closeHistoryModal()"
+                        class="px-5 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer">
+                        Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header / Navbar -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="bg-blue-600 text-white p-2 rounded-xl shadow-sm">
+                    <i data-lucide="wallet" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg sm:text-xl font-bold text-slate-900 tracking-tight leading-none">AP Tracker</h1>
+                    <p class="text-xs text-slate-500 mt-1">Pencatat Hutang Supplier, Cicilan & Jatuh Tempo</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 sm:gap-3">
+                <span id="current-date-display" class="hidden md:inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg">
+                    <i data-lucide="calendar" class="w-3.5 h-3.5 text-slate-500"></i>
+                    <span>Hari ini</span>
+                </span>
+                <button type="button" onclick="exportToCSV()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-all shadow-2xs cursor-pointer">
+                    <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Export Excel / CSV</span>
+                    <span class="sm:hidden">Export</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+
+        <!-- Ringkasan Dashboard (4 Cards) -->
+        <section aria-label="Ringkasan Hutang" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Card 1: Total Sisa Hutang Belum Lunas -->
+            <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs flex items-start justify-between">
+                <div>
+                    <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Sisa Hutang</p>
+                    <h2 id="stat-total-unpaid" class="text-xl sm:text-2xl font-extrabold text-slate-900 mt-1.5 tracking-tight">Rp 0</h2>
+                    <p class="text-xs text-slate-500 mt-1.5 flex items-center gap-1">
+                        <span id="stat-unpaid-count" class="font-semibold text-slate-700">0 tagihan</span>
+                        <span>belum lunas</span>
+                    </p>
+                </div>
+                <div class="p-2.5 bg-blue-50 text-blue-600 rounded-xl shrink-0">
+                    <i data-lucide="banknote" class="w-5 h-5"></i>
+                </div>
+            </div>
+
+            <!-- Card 2: Jatuh Tempo Terdekat / Mendesak -->
+            <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs flex items-start justify-between">
+                <div>
+                    <p class="text-[11px] font-bold uppercase tracking-wider text-rose-500">Mendesak (≤7 Hari)</p>
+                    <h2 id="stat-urgent-amount" class="text-xl sm:text-2xl font-extrabold text-rose-600 mt-1.5 tracking-tight">Rp 0</h2>
+                    <p class="text-xs text-slate-500 mt-1.5 flex items-center gap-1">
+                        <span id="stat-urgent-count" class="font-semibold text-rose-600">0 tagihan</span>
+                        <span>segera dibayar</span>
+                    </p>
+                </div>
+                <div class="p-2.5 bg-rose-50 text-rose-600 rounded-xl shrink-0">
+                    <i data-lucide="clock-alert" class="w-5 h-5"></i>
+                </div>
+            </div>
+
+            <!-- Card 3: Total Sudah Dibayar -->
+            <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs flex items-start justify-between">
+                <div>
+                    <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-600">Total Sudah Dibayar</p>
+                    <h2 id="stat-total-paid" class="text-xl sm:text-2xl font-extrabold text-emerald-700 mt-1.5 tracking-tight">Rp 0</h2>
+                    <p class="text-xs text-slate-500 mt-1.5">
+                        Dari total <span id="stat-grand-total" class="font-semibold text-slate-700">Rp 0</span>
+                    </p>
+                </div>
+                <div class="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl shrink-0">
+                    <i data-lucide="badge-check" class="w-5 h-5"></i>
+                </div>
+            </div>
+
+            <!-- Card 4: Jumlah Supplier Aktif -->
+            <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs flex items-start justify-between">
+                <div>
+                    <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Supplier Aktif</p>
+                    <h2 id="stat-active-suppliers" class="text-xl sm:text-2xl font-extrabold text-slate-900 mt-1.5 tracking-tight">0 Supplier</h2>
+                    <p class="text-xs text-slate-500 mt-1.5">
+                        Total terdata: <span id="stat-total-all-records" class="font-semibold text-slate-700">0 nota</span>
+                    </p>
+                </div>
+                <div class="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
+                    <i data-lucide="building-2" class="w-5 h-5"></i>
+                </div>
+            </div>
+        </section>
+
+        <!-- Form Input Hutang Baru -->
+        <section class="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="plus-circle" class="w-5 h-5 text-blue-600"></i>
+                    <h2 class="font-bold text-slate-800 text-base">Input Hutang Supplier Baru</h2>
+                </div>
+                <span class="text-xs text-slate-500 hidden sm:inline">Otomatis diurutkan berdasarkan jatuh tempo terdekat</span>
+            </div>
+
+            <form id="debt-form" class="p-5">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 items-end">
+                    
+                    <!-- Nama Supplier -->
+                    <div class="lg:col-span-3">
+                        <label for="supplier-name" class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                            Nama Supplier <span class="text-rose-500">*</span>
+                        </label>
+                        <div class="relative">
+                            <input type="text" id="supplier-name" list="supplier-suggestions" required placeholder="Contoh: PT. Sumber Makmur"
+                                class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
+                            <datalist id="supplier-suggestions"></datalist>
+                        </div>
+                    </div>
+
+                    <!-- Nominal Hutang / DPP -->
+                    <div class="lg:col-span-3">
+                        <label for="dpp-amount" class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                            Nominal Hutang / DPP (Rp) <span class="text-rose-500">*</span>
+                        </label>
+                        <div class="relative">
+                            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-semibold">Rp</span>
+                            <input type="text" inputmode="numeric" id="dpp-amount" required placeholder="0"
+                                class="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
+                        </div>
+                    </div>
+
+                    <!-- Pilihan PPN -->
+                    <div class="lg:col-span-3">
+                        <label for="ppn-select" class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                            PPN (%)
+                        </label>
+                        <div class="flex gap-2">
+                            <select id="ppn-select"
+                                class="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer">
+                                <option value="0">0% (Non-PPN)</option>
+                                <option value="11" selected>11% (PPN Umum)</option>
+                                <option value="12">12% (PPN 12%)</option>
+                                <option value="custom-percent">Manual (%)</option>
+                                <option value="custom-nominal">Manual (Rp)</option>
+                            </select>
+                            <input type="text" inputmode="decimal" id="ppn-custom-input" placeholder="0"
+                                class="hidden w-28 px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
+                        </div>
+                    </div>
+
+                    <!-- Tanggal Jatuh Tempo -->
+                    <div class="lg:col-span-3">
+                        <label for="due-date" class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                            Tanggal Jatuh Tempo <span class="text-rose-500">*</span>
+                        </label>
+                        <input type="date" id="due-date" required
+                            class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer">
+                    </div>
+
+                </div>
+
+                <!-- Baris Preview Kalkulasi Otomatis & Tombol Submit -->
+                <div class="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm bg-blue-50/70 border border-blue-100 px-4 py-2.5 rounded-xl">
+                        <div>
+                            <span class="text-slate-500 text-xs">DPP:</span>
+                            <span id="preview-dpp" class="font-semibold text-slate-800 ml-1">Rp 0</span>
+                        </div>
+                        <div class="text-slate-300">|</div>
+                        <div>
+                            <span class="text-slate-500 text-xs">Nilai PPN:</span>
+                            <span id="preview-ppn" class="font-semibold text-amber-700 ml-1">Rp 0</span>
+                        </div>
+                        <div class="text-slate-300">|</div>
+                        <div>
+                            <span class="text-slate-600 text-xs font-semibold">Total Tagihan:</span>
+                            <span id="preview-total" class="font-extrabold text-blue-700 text-base ml-1">Rp 0</span>
+                        </div>
+                    </div>
+
+                    <button type="submit"
+                        class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        <span>Tambah Hutang</span>
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Tabel Daftar Seluruh Hutang -->
+        <section class="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+            <!-- Header Tabel, Filter & Search -->
+            <div class="p-5 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                <div>
+                    <h2 class="font-bold text-slate-900 text-base flex items-center gap-2">
+                        <span>Daftar Seluruh Hutang</span>
+                        <span id="table-count-badge" class="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full">0</span>
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Diurutkan otomatis dari tanggal jatuh tempo terdekat untuk tagihan aktif</p>
+                </div>
+
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <!-- Filter Status Pills -->
+                    <div class="inline-flex bg-slate-100 p-1 rounded-xl overflow-x-auto" role="tablist">
+                        <button type="button" data-filter="all" onclick="setFilter('all')"
+                            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap bg-white text-slate-900 shadow-2xs cursor-pointer">
+                            Semua
+                        </button>
+                        <button type="button" data-filter="unpaid" onclick="setFilter('unpaid')"
+                            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all whitespace-nowrap cursor-pointer">
+                            Belum Lunas
+                        </button>
+                        <button type="button" data-filter="partial" onclick="setFilter('partial')"
+                            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all whitespace-nowrap cursor-pointer">
+                            Sebagian / Cicilan
+                        </button>
+                        <button type="button" data-filter="urgent" onclick="setFilter('urgent')"
+                            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all whitespace-nowrap cursor-pointer">
+                            Jatuh Tempo
+                        </button>
+                        <button type="button" data-filter="paid" onclick="setFilter('paid')"
+                            class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all whitespace-nowrap cursor-pointer">
+                            Lunas
+                        </button>
+                    </div>
+
+                    <!-- Search Supplier -->
+                    <div class="relative min-w-[220px]">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+                        <input type="text" id="search-input" placeholder="Cari nama supplier..."
+                            class="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                        <button type="button" id="clear-search-btn" onclick="clearSearch()" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
+                            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Responsive Table Container -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50/90 border-b border-slate-200/80 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            <th class="py-3.5 px-5">Status & Jatuh Tempo</th>
+                            <th class="py-3.5 px-4">Nama Supplier</th>
+                            <th class="py-3.5 px-4 text-right">Rincian Tagihan</th>
+                            <th class="py-3.5 px-4 text-right">Sudah Dibayar</th>
+                            <th class="py-3.5 px-4 text-right">Sisa Hutang</th>
+                            <th class="py-3.5 px-5 text-center">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="debt-table-body" class="divide-y divide-slate-100 text-sm">
+                        <!-- Baris data akan dirender melalui JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Empty State -->
+            <div id="empty-state" class="hidden py-14 px-4 text-center">
+                <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-slate-100 text-slate-400 mb-3">
+                    <i data-lucide="inbox" class="w-7 h-7"></i>
+                </div>
+                <h3 class="text-base font-bold text-slate-800">Belum ada data hutang</h3>
+                <p id="empty-state-desc" class="text-sm text-slate-500 max-w-sm mx-auto mt-1">
+                    Silakan tambahkan catatan hutang supplier baru melalui formulir di atas.
+                </p>
+                <button type="button" id="load-sample-btn" onclick="loadSampleData()"
+                    class="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors cursor-pointer">
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                    <span>Isi Contoh Data Simulasi</span>
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200/80 py-4 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+            <p>Data tersimpan otomatis di browser perangkat Anda (Local Storage).</p>
+            <button type="button" onclick="confirmResetAll()" class="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer">
+                Reset Semua Data
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        // ==========================================
+        // STATE & KONFIGURASI APLIKASI
+        // ==========================================
+        const STORAGE_KEY = 'ap_tracker_debts_v2';
+        const LEGACY_STORAGE_KEY = 'ap_tracker_debts_v1';
+        let debts = [];
+        let currentFilter = 'all'; // 'all', 'unpaid', 'partial', 'urgent', 'paid'
+        let searchQuery = '';
+        let pendingConfirmAction = null;
+
+        // ==========================================
+        // FORMATTER MATA UANG & TANGGAL INDONESIA
+        // ==========================================
+        const formatRupiah = (number) => {
+            return new Intl.NumberFormat('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(Math.round(number || 0));
+        };
+
+        const formatNumberRibuan = (number) => {
+            if (!number && number !== 0) return '';
+            return new Intl.NumberFormat('id-ID').format(number);
+        };
+
+        const parseRibuanToNumber = (str) => {
+            if (!str) return 0;
+            const cleaned = str.toString().replace(/[^\d]/g, '');
+            return cleaned ? parseInt(cleaned, 10) : 0;
+        };
+
+        const formatTanggalIndo = (dateString) => {
+            if (!dateString) return '-';
+            const [year, month, day] = dateString.split('-').map(Number);
+            const date = new Date(year, month - 1, day);
+            return new Intl.DateTimeFormat('id-ID', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric'
+            }).format(date);
+        };
+
+        const getTodayDateString = () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const getDaysDiff = (dueDateStr) => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const [year, month, day] = dueDateStr.split('-').map(Number);
+            const dueDate = new Date(year, month - 1, day);
+            dueDate.setHours(0, 0, 0, 0);
+
+            const diffTime = dueDate.getTime() - today.getTime();
+            return Math.round(diffTime / (1000 * 60 * 60 * 24));
+        };
+
+        // Helper menghitung total sudah dibayar & sisa hutang dari sebuah record
+        const getDebtPaymentSummary = (debt) => {
+            const payments = Array.isArray(debt.payments) ? debt.payments : [];
+            const paidAmount = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+            const remainingAmount = Math.max(0, debt.total - paidAmount);
+            const isPaid = remainingAmount === 0 && debt.total > 0;
+            const isPartial = paidAmount > 0 && remainingAmount > 0;
+            return { payments, paidAmount, remainingAmount, isPaid, isPartial };
+        };
+
+        // ==========================================
+        // KALKULASI PPN & FORM PREVIEW
+        // ==========================================
+        const calculateFormValues = () => {
+            const dppRaw = document.getElementById('dpp-amount').value;
+            const dpp = parseRibuanToNumber(dppRaw);
+            const ppnMode = document.getElementById('ppn-select').value;
+            const customValRaw = document.getElementById('ppn-custom-input').value;
+
+            let ppnAmount = 0;
+            let ppnLabel = '0%';
+
+            if (ppnMode === '0') {
+                ppnAmount = 0;
+                ppnLabel = '0%';
+            } else if (ppnMode === '11') {
+                ppnAmount = Math.round(dpp * 0.11);
+                ppnLabel = '11%';
+            } else if (ppnMode === '12') {
+                ppnAmount = Math.round(dpp * 0.12);
+                ppnLabel = '12%';
+            } else if (ppnMode === 'custom-percent') {
+                const percent = parseFloat(customValRaw.replace(',', '.')) || 0;
+                ppnAmount = Math.round(dpp * (percent / 100));
+                ppnLabel = `${percent}%`;
+            } else if (ppnMode === 'custom-nominal') {
+                ppnAmount = parseRibuanToNumber(customValRaw);
+                ppnLabel = 'Manual';
+            }
+
+            const total = dpp + ppnAmount;
+
+            document.getElementById('preview-dpp').textContent = formatRupiah(dpp);
+            document.getElementById('preview-ppn').textContent = formatRupiah(ppnAmount);
+            document.getElementById('preview-total').textContent = formatRupiah(total);
+
+            return { dpp, ppnAmount, ppnLabel, total };
+        };
+
+        // ==========================================
+        // MANAJEMEN DATA (LOCALSTORAGE & MIGRASI)
+        // ==========================================
+        const loadDebts = () => {
+            try {
+                const savedV2 = localStorage.getItem(STORAGE_KEY);
+                if (savedV2) {
+                    debts = JSON.parse(savedV2);
+                    return;
+                }
+                // Migrasi otomatis jika ada data dari versi sebelumnya
+                const savedV1 = localStorage.getItem(LEGACY_STORAGE_KEY);
+                if (savedV1) {
+                    const oldDebts = JSON.parse(savedV1);
+                    debts = oldDebts.map(d => ({
+                        ...d,
+                        payments: d.isPaid ? [{
+                            id: 'pay_migrated_' + Date.now(),
+                            amount: d.total,
+                            date: d.paidAt ? d.paidAt.split('T')[0] : getTodayDateString(),
+                            note: 'Pelunasan (Migrasi Data)'
+                        }] : []
+                    }));
+                    saveDebts();
+                }
+            } catch (e) {
+                console.error('Gagal membaca data dari localStorage:', e);
+                debts = [];
+            }
+        };
+
+        const saveDebts = () => {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(debts));
+                updateSupplierSuggestions();
+            } catch (e) {
+                console.error('Gagal menyimpan data ke localStorage:', e);
+                showToast('Gagal menyimpan data ke penyimpanan browser', 'error');
+            }
+        };
+
+        const updateSupplierSuggestions = () => {
+            const datalist = document.getElementById('supplier-suggestions');
+            const uniqueSuppliers = [...new Set(debts.map(d => d.supplier.trim()))].sort();
+            datalist.innerHTML = uniqueSuppliers
+                .map(name => `<option value="${escapeHtml(name)}">`)
+                .join('');
+        };
+
+        const addDebt = (e) => {
+            e.preventDefault();
+            const supplierInput = document.getElementById('supplier-name');
+            const dueDateInput = document.getElementById('due-date');
+
+            const supplier = supplierInput.value.trim();
+            const dueDate = dueDateInput.value;
+            const { dpp, ppnAmount, ppnLabel, total } = calculateFormValues();
+
+            if (!supplier) {
+                showToast('Nama supplier wajib diisi', 'error');
+                supplierInput.focus();
+                return;
+            }
+            if (dpp <= 0) {
+                showToast('Nominal hutang (DPP) harus lebih dari 0', 'error');
+                document.getElementById('dpp-amount').focus();
+                return;
+            }
+            if (!dueDate) {
+                showToast('Tanggal jatuh tempo wajib dipilih', 'error');
+                dueDateInput.focus();
+                return;
+            }
+
+            const newDebt = {
+                id: 'debt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+                supplier,
+                dpp,
+                ppnAmount,
+                ppnLabel,
+                total,
+                dueDate,
+                payments: [],
+                createdAt: new Date().toISOString()
+            };
+
+            debts.push(newDebt);
+            saveDebts();
+            renderApp();
+
+            supplierInput.value = '';
+            document.getElementById('dpp-amount').value = '';
+            if (document.getElementById('ppn-select').value.startsWith('custom')) {
+                document.getElementById('ppn-custom-input').value = '';
+            }
+            calculateFormValues();
+            supplierInput.focus();
+
+            showToast(`Hutang ke ${supplier} berhasil ditambahkan`, 'success');
+        };
+
+        // ==========================================
+        // FITUR PEMBAYARAN (CICILAN & PELUNASAN)
+        // ==========================================
+        const openPaymentModal = (debtId) => {
+            const debt = debts.find(d => d.id === debtId);
+            if (!debt) return;
+
+            const { paidAmount, remainingAmount } = getDebtPaymentSummary(debt);
+            if (remainingAmount <= 0) {
+                showToast('Tagihan ini sudah lunas sepenuhnya', 'info');
+                return;
+            }
+
+            const status = getStatusInfo(debt);
+
+            document.getElementById('pay-debt-id').value = debt.id;
+            document.getElementById('pay-modal-supplier').textContent = debt.supplier;
+            document.getElementById('pay-modal-duedate').textContent = formatTanggalIndo(debt.dueDate);
+
+            const badgeEl = document.getElementById('pay-modal-badge');
+            badgeEl.textContent = `${status.label} (${status.subLabel})`;
+            badgeEl.className = `px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${status.badgeClass}`;
+
+            document.getElementById('pay-modal-total').textContent = formatRupiah(debt.total);
+            document.getElementById('pay-modal-paid').textContent = formatRupiah(paidAmount);
+            document.getElementById('pay-modal-remaining').textContent = formatRupiah(remainingAmount);
+            document.getElementById('quick-full-label').textContent = formatRupiah(remainingAmount);
+
+            const amountInput = document.getElementById('pay-amount-input');
+            amountInput.value = '';
+            document.getElementById('pay-status-preview').textContent = '';
+            document.getElementById('pay-date-input').value = getTodayDateString();
+            document.getElementById('pay-note-input').value = '';
+
+            const modal = document.getElementById('payment-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            lucide.createIcons();
+            setTimeout(() => amountInput.focus(), 50);
+        };
+
+        const closePaymentModal = () => {
+            const modal = document.getElementById('payment-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        };
+
+        const setQuickPayAmount = (mode) => {
+            const debtId = document.getElementById('pay-debt-id').value;
+            const debt = debts.find(d => d.id === debtId);
+            if (!debt) return;
+
+            const { remainingAmount } = getDebtPaymentSummary(debt);
+            const targetAmount = mode === 'full' ? remainingAmount : Math.round(remainingAmount / 2);
+
+            const amountInput = document.getElementById('pay-amount-input');
+            amountInput.value = formatNumberRibuan(targetAmount);
+            updatePaymentPreviewState();
+            amountInput.focus();
+        };
+
+        const updatePaymentPreviewState = () => {
+            const debtId = document.getElementById('pay-debt-id').value;
+            const debt = debts.find(d => d.id === debtId);
+            if (!debt) return;
+
+            const { remainingAmount } = getDebtPaymentSummary(debt);
+            const inputVal = parseRibuanToNumber(document.getElementById('pay-amount-input').value);
+            const previewEl = document.getElementById('pay-status-preview');
+
+            if (inputVal <= 0) {
+                previewEl.textContent = '';
+            } else if (inputVal > remainingAmount) {
+                previewEl.textContent = 'Melebihi sisa hutang!';
+                previewEl.className = 'text-xs font-bold text-rose-600';
+            } else if (inputVal === remainingAmount) {
+                previewEl.textContent = 'Status akan menjadi: LUNAS';
+                previewEl.className = 'text-xs font-bold text-emerald-600';
+            } else {
+                const sisaNanti = remainingAmount - inputVal;
+                previewEl.textContent = `Sisa nanti: ${formatRupiah(sisaNanti)}`;
+                previewEl.className = 'text-xs font-bold text-indigo-600';
+            }
+        };
+
+        const submitPaymentForm = (e) => {
+            e.preventDefault();
+            const debtId = document.getElementById('pay-debt-id').value;
+            const debtIndex = debts.findIndex(d => d.id === debtId);
+            if (debtIndex === -1) return;
+
+            const debt = debts[debtIndex];
+            const { remainingAmount } = getDebtPaymentSummary(debt);
+            const payAmount = parseRibuanToNumber(document.getElementById('pay-amount-input').value);
+            const payDate = document.getElementById('pay-date-input').value || getTodayDateString();
+            const payNote = document.getElementById('pay-note-input').value.trim();
+
+            if (payAmount <= 0) {
+                showToast('Nominal pembayaran harus lebih dari Rp 0', 'error');
+                document.getElementById('pay-amount-input').focus();
+                return;
+            }
+
+            if (payAmount > remainingAmount) {
+                showToast(`Nominal melebihi sisa hutang (${formatRupiah(remainingAmount)})`, 'error');
+                document.getElementById('pay-amount-input').focus();
+                return;
+            }
+
+            if (!Array.isArray(debt.payments)) {
+                debt.payments = [];
+            }
+
+            debt.payments.push({
+                id: 'pay_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                amount: payAmount,
+                date: payDate,
+                note: payNote
+            });
+
+            saveDebts();
+            closePaymentModal();
+            renderApp();
+
+            const newSummary = getDebtPaymentSummary(debt);
+            if (newSummary.isPaid) {
+                showToast(`Pembayaran ${formatRupiah(payAmount)} dicatat. Tagihan ${debt.supplier} LUNAS!`, 'success');
+            } else {
+                showToast(`Cicilan ${formatRupiah(payAmount)} dicatat. Sisa hutang: ${formatRupiah(newSummary.remainingAmount)}`, 'info');
+            }
+        };
+
+        // ==========================================
+        // MODAL RIWAYAT PEMBAYARAN & HAPUS CICILAN
+        // ==========================================
+        const openHistoryModal = (debtId) => {
+            const debt = debts.find(d => d.id === debtId);
+            if (!debt) return;
+
+            const { payments, paidAmount, remainingAmount, isPaid } = getDebtPaymentSummary(debt);
+
+            document.getElementById('hist-modal-supplier').textContent = `${debt.supplier} • Jatuh Tempo ${formatTanggalIndo(debt.dueDate)}`;
+            document.getElementById('hist-modal-total').textContent = formatRupiah(debt.total);
+            document.getElementById('hist-modal-paid').textContent = formatRupiah(paidAmount);
+            document.getElementById('hist-modal-remaining').textContent = formatRupiah(remainingAmount);
+
+            const addPayBtn = document.getElementById('hist-add-pay-btn');
+            if (isPaid) {
+                addPayBtn.classList.add('hidden');
+            } else {
+                addPayBtn.classList.remove('hidden');
+                addPayBtn.onclick = () => {
+                    closeHistoryModal();
+                    openPaymentModal(debt.id);
+                };
+            }
+
+            const listContainer = document.getElementById('history-list-container');
+            if (payments.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="p-6 text-center text-sm text-slate-500">
+                        Belum ada riwayat pembayaran untuk tagihan ini.
+                    </div>
+                `;
+            } else {
+                listContainer.innerHTML = payments.map((p, idx) => `
+                    <div class="p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors">
+                        <div class="flex items-start gap-3">
+                            <div class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                                ${idx + 1}
+                            </div>
+                            <div>
+                                <div class="font-bold text-slate-900 text-sm">${formatRupiah(p.amount)}</div>
+                                <div class="text-xs text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                                    <span>${formatTanggalIndo(p.date)}</span>
+                                    ${p.note ? `<span class="text-slate-300">•</span><span class="font-medium text-slate-600">${escapeHtml(p.note)}</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" onclick="confirmDeletePaymentItem('${debt.id}', '${p.id}')"
+                            title="Batalkan / Hapus Pembayaran Ini"
+                            class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                `).join('');
+            }
+
+            const modal = document.getElementById('history-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            lucide.createIcons();
+        };
+
+        const closeHistoryModal = () => {
+            const modal = document.getElementById('history-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        };
+
+        const confirmDeletePaymentItem = (debtId, paymentId) => {
+            const debt = debts.find(d => d.id === debtId);
+            if (!debt) return;
+            const payment = (debt.payments || []).find(p => p.id === paymentId);
+            if (!payment) return;
+
+            openConfirmModal({
+                title: 'Batalkan Pembayaran Ini?',
+                subtitle: debt.supplier,
+                message: `Hapus riwayat pembayaran sebesar ${formatRupiah(payment.amount)} tanggal ${formatTanggalIndo(payment.date)}? Sisa hutang akan bertambah kembali.`,
+                confirmText: 'Ya, Batalkan',
+                onConfirm: () => {
+                    debt.payments = debt.payments.filter(p => p.id !== paymentId);
+                    saveDebts();
+                    renderApp();
+                    openHistoryModal(debtId); // Refresh isi modal riwayat
+                    showToast('Riwayat pembayaran dibatalkan', 'info');
+                }
+            });
+        };
+
+        // ==========================================
+        // HAPUS TAGIHAN UTAMA & RESET ALL
+        // ==========================================
+        const confirmDeleteDebt = (id) => {
+            const debt = debts.find(d => d.id === id);
+            if (!debt) return;
+
+            openConfirmModal({
+                title: 'Hapus Catatan Hutang?',
+                subtitle: debt.supplier,
+                message: `Apakah Anda yakin ingin menghapus catatan hutang sebesar ${formatRupiah(debt.total)} dengan jatuh tempo ${formatTanggalIndo(debt.dueDate)}?`,
+                confirmText: 'Ya, Hapus',
+                onConfirm: () => {
+                    debts = debts.filter(d => d.id !== id);
+                    saveDebts();
+                    renderApp();
+                    showToast('Catatan hutang berhasil dihapus', 'info');
+                }
+            });
+        };
+
+        const confirmResetAll = () => {
+            if (debts.length === 0) {
+                showToast('Data sudah kosong', 'info');
+                return;
+            }
+            openConfirmModal({
+                title: 'Reset Semua Data?',
+                subtitle: 'Hapus seluruh riwayat transaksi',
+                message: `Semua ${debts.length} data hutang yang tersimpan akan dihapus permanen. Pastikan Anda sudah melakukan Export CSV jika diperlukan.`,
+                confirmText: 'Reset Semua',
+                onConfirm: () => {
+                    debts = [];
+                    saveDebts();
+                    renderApp();
+                    showToast('Seluruh data berhasil direset', 'info');
+                }
+            });
+        };
+
+        // ==========================================
+        // LOGIKA STATUS & PENGURUTAN JATUH TEMPO
+        // ==========================================
+        const getStatusInfo = (debt) => {
+            const { isPaid, isPartial, remainingAmount } = getDebtPaymentSummary(debt);
+
+            if (isPaid) {
+                return {
+                    type: 'paid',
+                    label: 'Lunas',
+                    subLabel: 'Terbayar penuh',
+                    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                    dotClass: 'bg-emerald-500',
+                    isUrgent: false,
+                    isPaid: true,
+                    isPartial: false
+                };
+            }
+
+            const diffDays = getDaysDiff(debt.dueDate);
+            let timeSubLabel = '';
+            let isUrgent = false;
+
+            if (diffDays < 0) {
+                timeSubLabel = `Terlambat ${Math.abs(diffDays)} hari`;
+                isUrgent = true;
+            } else if (diffDays === 0) {
+                timeSubLabel = 'Jatuh tempo hari ini';
+                isUrgent = true;
+            } else if (diffDays <= 7) {
+                timeSubLabel = `${diffDays} hari lagi`;
+                isUrgent = true;
+            } else {
+                timeSubLabel = `${diffDays} hari lagi`;
+                isUrgent = false;
+            }
+
+            if (isPartial) {
+                return {
+                    type: 'partial',
+                    label: 'Sebagian / Cicilan',
+                    subLabel: timeSubLabel,
+                    badgeClass: isUrgent
+                        ? 'bg-indigo-50 text-indigo-700 border-rose-300 ring-1 ring-rose-200'
+                        : 'bg-indigo-50 text-indigo-700 border-indigo-200',
+                    dotClass: 'bg-indigo-500',
+                    isUrgent,
+                    isPaid: false,
+                    isPartial: true
+                };
+            }
+
+            if (diffDays < 0) {
+                return {
+                    type: 'overdue',
+                    label: 'Sudah Jatuh Tempo',
+                    subLabel: timeSubLabel,
+                    badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
+                    dotClass: 'bg-rose-500 animate-pulse',
+                    isUrgent: true,
+                    isPaid: false,
+                    isPartial: false
+                };
+            } else if (diffDays === 0) {
+                return {
+                    type: 'due-today',
+                    label: 'Jatuh Tempo Hari Ini',
+                    subLabel: timeSubLabel,
+                    badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
+                    dotClass: 'bg-rose-500 animate-pulse',
+                    isUrgent: true,
+                    isPaid: false,
+                    isPartial: false
+                };
+            } else if (diffDays <= 7) {
+                return {
+                    type: 'soon',
+                    label: 'Segera Jatuh Tempo',
+                    subLabel: timeSubLabel,
+                    badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+                    dotClass: 'bg-amber-500',
+                    isUrgent: true,
+                    isPaid: false,
+                    isPartial: false
+                };
+            } else {
+                return {
+                    type: 'safe',
+                    label: 'Belum Lunas',
+                    subLabel: timeSubLabel,
+                    badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
+                    dotClass: 'bg-slate-400',
+                    isUrgent: false,
+                    isPaid: false,
+                    isPartial: false
+                };
+            }
+        };
+
+        const getSortedDebts = (list) => {
+            return [...list].sort((a, b) => {
+                const aPaid = getDebtPaymentSummary(a).isPaid;
+                const bPaid = getDebtPaymentSummary(b).isPaid;
+
+                // Yang belum lunas selalu di atas, lunas di bawah
+                if (aPaid !== bPaid) {
+                    return aPaid ? 1 : -1;
+                }
+                // Urutkan berdasarkan Tanggal Jatuh Tempo terdekat (ascending)
+                if (a.dueDate !== b.dueDate) {
+                    return a.dueDate.localeCompare(b.dueDate);
+                }
+                return (a.createdAt || '').localeCompare(b.createdAt || '');
+            });
+        };
+
+        // ==========================================
+        // RENDER DASHBOARD & TABEL
+        // ==========================================
+        const updateDashboardStats = () => {
+            let totalRemainingUnpaid = 0;
+            let unpaidCount = 0;
+            let totalUrgentRemaining = 0;
+            let urgentCount = 0;
+            let totalPaidAll = 0;
+            let grandTotalAll = 0;
+            const activeSuppliersSet = new Set();
+
+            debts.forEach(d => {
+                const { paidAmount, remainingAmount, isPaid } = getDebtPaymentSummary(d);
+                const status = getStatusInfo(d);
+
+                grandTotalAll += d.total;
+                totalPaidAll += paidAmount;
+
+                if (!isPaid) {
+                    totalRemainingUnpaid += remainingAmount;
+                    unpaidCount++;
+                    activeSuppliersSet.add(d.supplier.trim().toLowerCase());
+
+                    if (status.isUrgent) {
+                        totalUrgentRemaining += remainingAmount;
+                        urgentCount++;
+                    }
+                }
+            });
+
+            document.getElementById('stat-total-unpaid').textContent = formatRupiah(totalRemainingUnpaid);
+            document.getElementById('stat-unpaid-count').textContent = `${unpaidCount} tagihan`;
+
+            document.getElementById('stat-urgent-amount').textContent = formatRupiah(totalUrgentRemaining);
+            document.getElementById('stat-urgent-count').textContent = `${urgentCount} tagihan`;
+
+            document.getElementById('stat-total-paid').textContent = formatRupiah(totalPaidAll);
+            document.getElementById('stat-grand-total').textContent = formatRupiah(grandTotalAll);
+
+            document.getElementById('stat-active-suppliers').textContent = `${activeSuppliersSet.size} Supplier`;
+            document.getElementById('stat-total-all-records').textContent = `${debts.length} nota`;
+        };
+
+        const renderTable = () => {
+            const tbody = document.getElementById('debt-table-body');
+            const emptyState = document.getElementById('empty-state');
+            const emptyDesc = document.getElementById('empty-state-desc');
+            const loadSampleBtn = document.getElementById('load-sample-btn');
+            const countBadge = document.getElementById('table-count-badge');
+
+            const sorted = getSortedDebts(debts);
+
+            const filtered = sorted.filter(debt => {
+                const matchesSearch = debt.supplier.toLowerCase().includes(searchQuery.toLowerCase());
+                if (!matchesSearch) return false;
+
+                const { isPaid, isPartial } = getDebtPaymentSummary(debt);
+                const status = getStatusInfo(debt);
+
+                if (currentFilter === 'unpaid') return !isPaid;
+                if (currentFilter === 'partial') return isPartial;
+                if (currentFilter === 'paid') return isPaid;
+                if (currentFilter === 'urgent') return !isPaid && status.isUrgent;
+                return true;
+            });
+
+            countBadge.textContent = filtered.length;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '';
+                emptyState.classList.remove('hidden');
+
+                if (debts.length === 0) {
+                    emptyDesc.textContent = 'Silakan tambahkan catatan hutang supplier baru melalui formulir di atas.';
+                    loadSampleBtn.classList.remove('hidden');
+                } else {
+                    emptyDesc.textContent = 'Tidak ada catatan hutang yang sesuai dengan filter atau pencarian saat ini.';
+                    loadSampleBtn.classList.add('hidden');
+                }
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+
+            tbody.innerHTML = filtered.map(debt => {
+                const { payments, paidAmount, remainingAmount, isPaid, isPartial } = getDebtPaymentSummary(debt);
+                const status = getStatusInfo(debt);
+
+                const rowBgClass = isPaid
+                    ? 'bg-slate-50/70 text-slate-400'
+                    : (status.type === 'overdue' || status.type === 'due-today')
+                        ? 'bg-rose-50/20 hover:bg-rose-50/40'
+                        : 'hover:bg-slate-50/90';
+
+                // Progress bar kecil jika sudah bayar sebagian
+                const progressPercent = debt.total > 0 ? Math.min(100, Math.round((paidAmount / debt.total) * 100)) : 0;
+
+                return `
+                    <tr class="transition-colors ${rowBgClass}">
+                        <!-- Kolom 1: Status & Jatuh Tempo -->
+                        <td class="py-3.5 px-5 whitespace-nowrap">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${status.badgeClass}">
+                                <span class="w-1.5 h-1.5 rounded-full ${status.dotClass}"></span>
+                                ${status.label}
+                            </span>
+                            <div class="mt-1.5 flex items-center gap-1.5 text-xs">
+                                <span class="font-semibold ${isPaid ? 'text-slate-400' : 'text-slate-800'}">${formatTanggalIndo(debt.dueDate)}</span>
+                                <span class="text-slate-300">•</span>
+                                <span class="${status.isUrgent && !isPaid ? 'text-rose-600 font-bold' : 'text-slate-500'}">${status.subLabel}</span>
+                            </div>
+                        </td>
+
+                        <!-- Kolom 2: Nama Supplier -->
+                        <td class="py-3.5 px-4">
+                            <div class="font-bold ${isPaid ? 'text-slate-500' : 'text-slate-900'}">
+                                ${escapeHtml(debt.supplier)}
+                            </div>
+                            ${isPartial ? `
+                                <div class="mt-1.5 w-32 bg-slate-200 rounded-full h-1.5 overflow-hidden" title="Terbayar ${progressPercent}%">
+                                    <div class="bg-indigo-600 h-1.5 rounded-full" style="width: ${progressPercent}%"></div>
+                                </div>
+                            ` : ''}
+                        </td>
+
+                        <!-- Kolom 3: Rincian Tagihan (DPP + PPN = Total) -->
+                        <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                            <div class="font-semibold ${isPaid ? 'text-slate-500' : 'text-slate-800'}">
+                                ${formatRupiah(debt.total)}
+                            </div>
+                            <div class="text-[11px] text-slate-400 mt-0.5">
+                                DPP ${formatRupiah(debt.dpp)} + PPN ${escapeHtml(debt.ppnLabel)}
+                            </div>
+                        </td>
+
+                        <!-- Kolom 4: Sudah Dibayar -->
+                        <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                            <div class="font-semibold ${paidAmount > 0 ? 'text-emerald-600' : 'text-slate-400'}">
+                                ${formatRupiah(paidAmount)}
+                            </div>
+                            ${payments.length > 0 ? `
+                                <div class="text-[11px] text-slate-400 mt-0.5">${payments.length}x pembayaran</div>
+                            ` : ''}
+                        </td>
+
+                        <!-- Kolom 5: Sisa Hutang -->
+                        <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                            <div class="text-sm font-extrabold ${isPaid ? 'text-slate-400 line-through' : 'text-slate-900'}">
+                                ${formatRupiah(remainingAmount)}
+                            </div>
+                        </td>
+
+                        <!-- Kolom 6: Aksi (Bayar, Riwayat, Hapus) -->
+                        <td class="py-3.5 px-5 text-center whitespace-nowrap">
+                            <div class="inline-flex items-center justify-center gap-1.5">
+                                ${!isPaid ? `
+                                    <button type="button" onclick="openPaymentModal('${debt.id}')"
+                                        title="Input Pembayaran / Cicilan"
+                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 shadow-2xs transition-all cursor-pointer">
+                                        <i data-lucide="banknote" class="w-3.5 h-3.5"></i>
+                                        <span>Bayar</span>
+                                    </button>
+                                ` : `
+                                    <span class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                                        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                                        <span>Selesai</span>
+                                    </span>
+                                `}
+
+                                ${payments.length > 0 ? `
+                                    <button type="button" onclick="openHistoryModal('${debt.id}')"
+                                        title="Lihat Riwayat Pembayaran (${payments.length})"
+                                        class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/80 transition-colors cursor-pointer">
+                                        <i data-lucide="history" class="w-3.5 h-3.5"></i>
+                                        <span>Riwayat</span>
+                                    </button>
+                                ` : ''}
+
+                                <button type="button" onclick="confirmDeleteDebt('${debt.id}')"
+                                    title="Hapus Data Tagihan"
+                                    class="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            lucide.createIcons();
+        };
+
+        const renderApp = () => {
+            updateDashboardStats();
+            renderTable();
+        };
+
+        // ==========================================
+        // FILTER & PENCARIAN
+        // ==========================================
+        const setFilter = (filterName) => {
+            currentFilter = filterName;
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                if (btn.dataset.filter === filterName) {
+                    btn.className = 'filter-btn px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap bg-white text-slate-900 shadow-2xs cursor-pointer';
+                } else {
+                    btn.className = 'filter-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all whitespace-nowrap cursor-pointer';
+                }
+            });
+            renderTable();
+        };
+
+        const clearSearch = () => {
+            const input = document.getElementById('search-input');
+            input.value = '';
+            searchQuery = '';
+            document.getElementById('clear-search-btn').classList.add('hidden');
+            renderTable();
+            input.focus();
+        };
+
+        // ==========================================
+        // EXPORT KE CSV / EXCEL
+        // ==========================================
+        const exportToCSV = () => {
+            if (debts.length === 0) {
+                showToast('Tidak ada data untuk di-export', 'error');
+                return;
+            }
+
+            const sorted = getSortedDebts(debts);
+            const headers = [
+                'No',
+                'Nama Supplier',
+                'Nominal Hutang / DPP (Rp)',
+                'Tarif PPN',
+                'Nilai PPN (Rp)',
+                'Total Tagihan (Rp)',
+                'Sudah Dibayar (Rp)',
+                'Sisa Hutang (Rp)',
+                'Tanggal Jatuh Tempo',
+                'Status Pembayaran',
+                'Keterangan Jatuh Tempo'
+            ];
+
+            const rows = sorted.map((d, idx) => {
+                const status = getStatusInfo(d);
+                const { paidAmount, remainingAmount } = getDebtPaymentSummary(d);
+                return [
+                    idx + 1,
+                    `"${d.supplier.replace(/"/g, '""')}"`,
+                    d.dpp,
+                    `"${d.ppnLabel}"`,
+                    d.ppnAmount,
+                    d.total,
+                    paidAmount,
+                    remainingAmount,
+                    d.dueDate,
+                    `"${status.label}"`,
+                    `"${status.subLabel}"`
+                ].join(';');
+            });
+
+            const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement('a');
+            const todayStr = getTodayDateString();
+            link.setAttribute('href', url);
+            link.setAttribute('download', `Laporan_Hutang_Supplier_${todayStr}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            showToast('File CSV/Excel berhasil diunduh', 'success');
+        };
+
+        // ==========================================
+        // DATA CONTOH SIMULASI
+        // ==========================================
+        const loadSampleData = () => {
+            const addDaysToToday = (days) => {
+                const date = new Date();
+                date.setDate(date.getDate() + days);
+                const y = date.getFullYear();
+                const m = String(date.getMonth() + 1).padStart(2, '0');
+                const d = String(date.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            };
+
+            const samples = [
+                {
+                    id: 'sample_1',
+                    supplier: 'PT. Baja Perkasa Utama',
+                    dpp: 15000000,
+                    ppnAmount: 1650000,
+                    ppnLabel: '11%',
+                    total: 16650000,
+                    dueDate: addDaysToToday(-2),
+                    payments: [],
+                    createdAt: new Date().toISOString()
+                },
+                {
+                    id: 'sample_2',
+                    supplier: 'CV. Maju Jaya Packaging',
+                    dpp: 6000000,
+                    ppnAmount: 660000,
+                    ppnLabel: '11%',
+                    total: 6660000,
+                    dueDate: addDaysToToday(3),
+                    payments: [
+                        {
+                            id: 'pay_sample_1',
+                            amount: 3000000,
+                            date: addDaysToToday(-1),
+                            note: 'Transfer BCA (DP / Cicilan 1)'
+                        }
+                    ],
+                    createdAt: new Date().toISOString()
+                },
+                {
+                    id: 'sample_3',
+                    supplier: 'UD. Kertas & ATK Sentosa',
+                    dpp: 1250000,
+                    ppnAmount: 0,
+                    ppnLabel: '0%',
+                    total: 1250000,
+                    dueDate: addDaysToToday(14),
+                    payments: [],
+                    createdAt: new Date().toISOString()
+                },
+                {
+                    id: 'sample_4',
+                    supplier: 'PT. Logistik Nusantara',
+                    dpp: 8000000,
+                    ppnAmount: 880000,
+                    ppnLabel: '11%',
+                    total: 8880000,
+                    dueDate: addDaysToToday(-5),
+                    payments: [
+                        {
+                            id: 'pay_sample_2',
+                            amount: 8880000,
+                            date: addDaysToToday(-5),
+                            note: 'Transfer Mandiri Lunas'
+                        }
+                    ],
+                    createdAt: new Date().toISOString()
+                }
+            ];
+
+            debts = [...debts, ...samples];
+            saveDebts();
+            renderApp();
+            showToast('Contoh data hutang & cicilan berhasil dimuat', 'success');
+        };
+
+        // ==========================================
+        // UI HELPERS (MODAL, TOAST, ESCAPE HTML)
+        // ==========================================
+        const escapeHtml = (unsafe) => {
+            return String(unsafe)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        };
+
+        const showToast = (message, type = 'success') => {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+
+            const styles = {
+                success: 'bg-slate-900 text-white border-slate-700',
+                error: 'bg-rose-600 text-white border-rose-500',
+                info: 'bg-blue-600 text-white border-blue-500'
+            };
+
+            const icons = {
+                success: 'check-circle',
+                error: 'alert-circle',
+                info: 'info'
+            };
+
+            toast.className = `pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium transform transition-all duration-300 translate-y-2 opacity-0 ${styles[type] || styles.success}`;
+            toast.innerHTML = `
+                <i data-lucide="${icons[type] || 'info'}" class="w-4 h-4 shrink-0"></i>
+                <span>${escapeHtml(message)}</span>
+            `;
+
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('translate-y-2', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        };
+
+        const openConfirmModal = ({ title, subtitle, message, confirmText, onConfirm }) => {
+            const modal = document.getElementById('confirm-modal');
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-subtitle').textContent = subtitle;
+            document.getElementById('modal-message').textContent = message;
+            document.getElementById('modal-confirm-btn').textContent = confirmText || 'Konfirmasi';
+
+            pendingConfirmAction = onConfirm;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        };
+
+        const closeConfirmModal = () => {
+            const modal = document.getElementById('confirm-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            pendingConfirmAction = null;
+        };
+
+        // ==========================================
+        // EVENT LISTENERS & INISIALISASI
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', () => {
+            const todayFormatted = new Intl.DateTimeFormat('id-ID', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+            }).format(new Date());
+            document.querySelector('#current-date-display span').textContent = todayFormatted;
+
+            document.getElementById('due-date').value = getTodayDateString();
+
+            // Format ribuan otomatis pada input Nominal Hutang (DPP)
+            const dppInput = document.getElementById('dpp-amount');
+            dppInput.addEventListener('input', (e) => {
+                const rawNumber = parseRibuanToNumber(e.target.value);
+                e.target.value = rawNumber > 0 ? formatNumberRibuan(rawNumber) : '';
+                calculateFormValues();
+            });
+
+            // Format ribuan otomatis pada input Nominal Pembayaran di Modal Bayar
+            const payAmountInput = document.getElementById('pay-amount-input');
+            payAmountInput.addEventListener('input', (e) => {
+                const rawNumber = parseRibuanToNumber(e.target.value);
+                e.target.value = rawNumber > 0 ? formatNumberRibuan(rawNumber) : '';
+                updatePaymentPreviewState();
+            });
+
+            // Dropdown PPN
+            const ppnSelect = document.getElementById('ppn-select');
+            const ppnCustomInput = document.getElementById('ppn-custom-input');
+
+            ppnSelect.addEventListener('change', (e) => {
+                const val = e.target.value;
+                if (val === 'custom-percent') {
+                    ppnCustomInput.classList.remove('hidden');
+                    ppnCustomInput.placeholder = 'Contoh: 1.1';
+                    ppnCustomInput.value = '';
+                    ppnCustomInput.focus();
+                } else if (val === 'custom-nominal') {
+                    ppnCustomInput.classList.remove('hidden');
+                    ppnCustomInput.placeholder = 'Nominal Rp';
+                    ppnCustomInput.value = '';
+                    ppnCustomInput.focus();
+                } else {
+                    ppnCustomInput.classList.add('hidden');
+                }
+                calculateFormValues();
+            });
+
+            ppnCustomInput.addEventListener('input', (e) => {
+                if (ppnSelect.value === 'custom-nominal') {
+                    const rawNumber = parseRibuanToNumber(e.target.value);
+                    e.target.value = rawNumber > 0 ? formatNumberRibuan(rawNumber) : '';
+                }
+                calculateFormValues();
+            });
+
+            // Submit form tambah hutang & form bayar
+            document.getElementById('debt-form').addEventListener('submit', addDebt);
+            document.getElementById('payment-form').addEventListener('submit', submitPaymentForm);
+
+            // Pencarian real-time
+            const searchInput = document.getElementById('search-input');
+            const clearBtn = document.getElementById('clear-search-btn');
+            searchInput.addEventListener('input', (e) => {
+                searchQuery = e.target.value;
+                if (searchQuery.length > 0) {
+                    clearBtn.classList.remove('hidden');
+                } else {
+                    clearBtn.classList.add('hidden');
+                }
+                renderTable();
+            });
+
+            // Modal Confirmation Buttons
+            document.getElementById('modal-cancel-btn').addEventListener('click', closeConfirmModal);
+            document.getElementById('modal-confirm-btn').addEventListener('click', () => {
+                if (typeof pendingConfirmAction === 'function') {
+                    pendingConfirmAction();
+                }
+                closeConfirmModal();
+            });
+
+            // Load data & render pertama kali
+            loadDebts();
+            updateSupplierSuggestions();
+            renderApp();
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>
